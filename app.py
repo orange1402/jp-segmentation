@@ -1,13 +1,18 @@
 from flask import Flask, request, render_template_string
-from fugashi import Tagger
 from functools import lru_cache
+
+# 改用 SudachiPy（純 Python，不需要 MeCab）
+from sudachipy import dictionary, tokenizer as sudachi_tokenizer
 
 app = Flask(__name__)
 
-# 只有在第一次需要時才建立 Tagger，避免冷啟動逾時
+# 首次需要時才建立 Tokenizer，避免冷啟動逾時
 @lru_cache(maxsize=1)
-def get_tagger():
-    return Tagger()
+def get_tokenizer():
+    # 使用 core 詞典；mode A = 最短（細切），B/C 可較長
+    t = dictionary.Dictionary().create()
+    mode = sudachi_tokenizer.Tokenizer.SplitMode.A
+    return t, mode
 
 HTML_TEMPLATE = """
 <!doctype html>
@@ -40,8 +45,8 @@ HTML_TEMPLATE = """
     <h2>分詞結果</h2>
     <table>
         <tr><th>表層</th><th>品詞</th></tr>
-        {% for surface, feature in results %}
-        <tr><td>{{ surface }}</td><td>{{ feature }}</td></tr>
+        {% for surface, pos in results %}
+        <tr><td>{{ surface }}</td><td>{{ pos }}</td></tr>
         {% endfor %}
     </table>
 
@@ -64,13 +69,17 @@ def index():
     if request.method == "POST":
         text = request.form.get("text", "")
         pos_filter = request.form.get("pos_filter", "ALL")
-        words = get_tagger()(text)  # 延遲初始化的 Tagger
-        for word in words:
-            pos1 = getattr(word.feature, "pos1", "")
+        t, mode = get_tokenizer()
+        morphemes = t.tokenize(text, mode)
+        for m in morphemes:
+            surface = m.surface()
+            pos = m.part_of_speech()  # tuple，例如 ('名詞', '一般', ... )
+            pos1 = pos[0] if pos else ""
             if pos_filter == "ALL" or pos1 in ["名詞", "動詞"]:
-                results.append((word.surface, word.feature))
+                # 這裡顯示前二層品詞，如「名詞-普通名詞」或「動詞-一般」
+                pos_disp = "-".join([p for p in pos[:2] if p])
+                results.append((surface, pos_disp))
     return render_template_string(HTML_TEMPLATE, text=text, results=results, pos_filter=pos_filter)
 
 if __name__ == "__main__":
-    # 部署時不要開 debug；對外綁 0.0.0.0
     app.run(debug=False, port=5000, host="0.0.0.0")
