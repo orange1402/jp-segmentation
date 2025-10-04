@@ -1,4 +1,3 @@
 Flask==3.0.0
-fugashi==1.3.2
-unidic-lite==1.0.8
-gunicorn==21.2.0    # 部署用（本機不一定需要）
+fugashi[unidic-lite]==1.3.2
+gunicorn==21.2.0
